@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -27,7 +28,7 @@ public class TopicAListenerService {
 
     /*
     Caso 1
-    -------
+    ------
 
     Consumindo mensagem do tópico A, gravando em banco e depois produzindo mensagens para os tópicos B e C, com o mesmo produtor, mesmo transaction id.
 
@@ -39,8 +40,19 @@ public class TopicAListenerService {
 
     Teste 3: Lançando exceção após produzir mensagem do tópico B.
     Resultado: É feito rollback na transação de forma geral, incluindo consumidor, banco e produtor. A mensagem do tópico B é produzida, mas não é comitada.
+
+    Caso 2
+    ------
+
+    Cenário parecido com o caso 1. No entanto, ao invés de retries infinitos, uso de DLQ em caso de erro após 3 tentativas.
+
+    Teste 1: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B.
+    Resultado: A mensagem foi comitada na DLQ. No entanto, a mensagem do tópico B também foi comitada.
+
+    Teste 2: Usando um kafkaTemplate diferente com outro transaction id ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B.
+    Resultado: A mensagem foi comitada na DLQ. No entanto, a mensagem do tópico B também foi comitada.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
     public void processMessage(String messageTopicA) {
         LOGGER.info("Início do processamento da mensagem do tópico A...");
@@ -58,6 +70,11 @@ public class TopicAListenerService {
         var messageTopicB = messageTopicA + " - Destinada ao tópico B";
         var messageTopicC = messageTopicA + " - Destinada ao tópico C";
         kafkaTemplate.send(TOPIC_B, messageTopicB);
+
+        if (1 == 1) {
+            throw new RuntimeException();
+        }
+
         kafkaTemplate.send(TOPIC_C, messageTopicC);
     }
 }
