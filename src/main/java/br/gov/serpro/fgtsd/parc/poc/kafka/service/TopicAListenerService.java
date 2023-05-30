@@ -47,10 +47,16 @@ public class TopicAListenerService {
     Cenário parecido com o caso 1. No entanto, ao invés de retries infinitos, uso de DLQ em caso de erro após 3 tentativas.
 
     Teste 1: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B.
-    Resultado: A mensagem foi comitada na DLQ. No entanto, a mensagem do tópico B também foi comitada.
+    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "sendOffsetsToTransaction". No entanto, a mensagem do tópico B também foi comitada.
 
     Teste 2: Usando um kafkaTemplate diferente com outro transaction id ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B.
-    Resultado: A mensagem foi comitada na DLQ. No entanto, a mensagem do tópico B também foi comitada.
+    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "sendOffsetsToTransaction". No entanto, a mensagem do tópico B também foi comitada.
+
+    Teste 3: Usando um kafkaTemplate diferente com outro transaction id ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B. Sem configurar o bean kafkaTransactionManager no consumidor.
+    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagem do tópico B não foi comitada.
+
+    Teste 4: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B. Sem configurar o bean kafkaTransactionManager no consumidor.
+    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagem do tópico B não foi comitada.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
