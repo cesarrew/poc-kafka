@@ -2,7 +2,10 @@ package br.gov.serpro.fgtsd.parc.poc.kafka.config;
 
 import jakarta.persistence.EntityManagerFactory;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,8 +16,11 @@ import org.springframework.core.env.Environment;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.*;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.transaction.KafkaTransactionManager;
 import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,6 +32,7 @@ public class KafkaConfig {
     private static final String BOOTSTRAP_SERVERS_CONFIG = "localhost:9092";
     private static final String ISOLATION_LEVEL_CONFIG = "read_committed";
     private static final String TRANSACTIONAL_ID_CONFIG = "id_transacao";
+    private static final String TOPIC_A_DLQ = "topico_a_dlq";
 
     @Autowired
     private Environment env;
@@ -43,12 +50,38 @@ public class KafkaConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
-        factory.setConsumerFactory(consumerFactory());
 
         //Necessário ser configurado explicitamente no kafkaListenerContainerFactory. Caso contrário, o commit dos offsets será pelo método "commitSync", e não junto com a transação com o método "sendOffsetsToTransaction".
         factory.getContainerProperties().setTransactionManager(kafkaTransactionManager());
 
+        factory.setConsumerFactory(consumerFactory());
+        factory.setCommonErrorHandler(errorHandler(kafkaTemplate()));
         return factory;
+    }
+
+    @Bean
+    public DefaultErrorHandler errorHandler(KafkaTemplate<Object, Object> template) {
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(template, (r, e) -> {
+            return new TopicPartition(env.getProperty(TOPIC_A_DLQ), r.partition());
+        });
+
+        recoverer.setHeadersFunction((record, exception) -> this.addBusinessErrorHeader(record, exception));
+        return new DefaultErrorHandler(recoverer, new FixedBackOff(DELAY_BETWEEN_ATTEMPTS, NUMBER_OF_ATTEMPTS));
+    }
+
+    private Headers addBusinessErrorHeader(ConsumerRecord<?, ?> record, Exception exception) {
+        Headers headers = record.headers();
+        String message = null;
+
+        if (exception instanceof BusinessException) {
+            BusinessException e = (BusinessException) exception;
+            message = String.format("%s - %s", e.getMessageKey(), e.getMessage());
+        } else {
+            message = exception.getMessage();
+        }
+
+        headers.add(DEAD_LETTER_REASON_HEADER, message.getBytes());
+        return headers;
     }
 
     @Bean

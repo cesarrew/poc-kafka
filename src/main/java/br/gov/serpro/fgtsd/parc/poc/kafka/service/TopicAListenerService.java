@@ -38,7 +38,7 @@ public class TopicAListenerService {
     Resultado: A transação funciona de modo geral. O commit dos offsets fica ligado ao commit da transação. Uso do método "sendOffsetsToTransaction" para isso.
 
     Teste 3: Lançando exceção após produzir mensagem do tópico B.
-    Resultado: É feito rollback na transação de forma geral, incluindo consumidor, banco e produtor.
+    Resultado: É feito rollback na transação de forma geral, incluindo consumidor, banco e produtor. A mensagem do tópico B é produzida, mas não é comitada.
      */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
