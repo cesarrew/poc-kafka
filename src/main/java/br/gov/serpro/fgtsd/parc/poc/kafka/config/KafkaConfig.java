@@ -45,7 +45,7 @@ public class KafkaConfig {
     public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
 
-        //Necessário ser configurado explicitamente no kafkaListenerContainerFactory. Caso contrário, o commit dos offsets será pelo método "commitSync", e não junto com a transação com o método "sendOffsetsToTransaction".
+        //Necessário ser configurado explicitamente no kafkaListenerContainerFactory. Caso contrário, o commit dos offsets será pelo método "commitSync", e não junto com a transação com o método "sendOffsetsToTransaction". O problema é usar juntamente com o envio para DLQ. Quando isso acontece, mensagens produzidas que deveriam ter sido abortadas são comitadas juntamente com o offset consumido.
         //factory.getContainerProperties().setTransactionManager(kafkaTransactionManager());
 
         factory.setConsumerFactory(consumerFactory());
@@ -63,16 +63,22 @@ public class KafkaConfig {
         return new DefaultErrorHandler(recoverer, new FixedBackOff(DELAY_BETWEEN_ATTEMPTS, NUMBER_OF_ATTEMPTS));
     }
 
-//    @Bean
-//    public KafkaTransactionManager kafkaTransactionManager() {
-//        return new KafkaTransactionManager(producerFactory());
-//    }
-//
-//    @Bean
-//    @Primary
-//    public JpaTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
-//        return new JpaTransactionManager(entityManagerFactory);
-//    }
+    //Não utilizado juntamente com o tratamento de erro que produz na DLQ.
+    /*
+    @Bean
+    public KafkaTransactionManager kafkaTransactionManager() {
+        return new KafkaTransactionManager(producerFactory());
+    }
+    */
+
+    //Necessário ser declarado ao usar o kafkaTransactionManager.
+    /*
+    @Bean
+    @Primary
+    public JpaTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
+        return new JpaTransactionManager(entityManagerFactory);
+    }
+    */
 
     @Bean
     public ProducerFactory<String, String> producerFactory() {
