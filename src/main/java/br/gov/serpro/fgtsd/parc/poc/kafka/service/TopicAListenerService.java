@@ -2,6 +2,7 @@ package br.gov.serpro.fgtsd.parc.poc.kafka.service;
 
 import br.gov.serpro.fgtsd.parc.poc.kafka.model.Message;
 import br.gov.serpro.fgtsd.parc.poc.kafka.repository.MessageRepository;
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -74,12 +75,16 @@ public class TopicAListenerService {
     */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
-    public void processMessage(ConsumerRecord<String, String> record, ConsumerGroupMetadata groupMetadata) {
+    public void processMessage(Consumer<String, String> consumer, ConsumerRecord<String, String> consumerRecord) {
         LOGGER.info("Início do processamento da mensagem do tópico A...");
-        saveMessageDataBase(record.value());
-        sendKafkaMessages(record.value());
+        saveMessageDataBase(consumerRecord.value());
+        sendKafkaMessages(consumerRecord.value());
         LOGGER.info("Fim do processamento da mensagem do tópico A...");
-        kafkaTemplate.sendOffsetsToTransaction(Collections.singletonMap(new TopicPartition(record.topic(), record.partition()), new OffsetAndMetadata(record.offset() + 1)), groupMetadata);
+
+        kafkaTemplate.sendOffsetsToTransaction(
+                Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()),new OffsetAndMetadata(consumerRecord.offset() + 1)),
+                consumer.groupMetadata()
+        );
     }
 
     private void saveMessageDataBase(String messageTopicA) {
