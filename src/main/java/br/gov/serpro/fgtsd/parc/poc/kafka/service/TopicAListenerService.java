@@ -3,7 +3,6 @@ package br.gov.serpro.fgtsd.parc.poc.kafka.service;
 import br.gov.serpro.fgtsd.parc.poc.kafka.model.Message;
 import br.gov.serpro.fgtsd.parc.poc.kafka.repository.MessageRepository;
 import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -93,8 +92,8 @@ public class TopicAListenerService {
     }
 
     private void sendKafkaMessages(String messageTopicA) {
-        var messageTopicB = messageTopicA + " - Destinada ao tópico B";
-        var messageTopicC = messageTopicA + " - Destinada ao tópico C";
+        var messageTopicB = "Mensagem para o tópico B: " + messageTopicA;
+        var messageTopicC = "Mensagem para o tópico C: " + messageTopicA;
         kafkaTemplate.send(TOPIC_B, messageTopicB);
         kafkaTemplate.send(TOPIC_C, messageTopicC);
     }

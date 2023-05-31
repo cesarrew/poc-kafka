@@ -1,5 +1,6 @@
 package br.gov.serpro.fgtsd.parc.poc.kafka.config;
 
+import br.gov.serpro.fgtsd.parc.poc.kafka.recover.CustomDeadLetterPublishingRecoverer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -12,7 +13,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.*;
-import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -54,13 +54,13 @@ public class KafkaConfig {
     }
 
     @Bean
-    public DefaultErrorHandler errorHandler(KafkaTemplate<String, String> template) {
-        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(template, (r, e) -> {
-            return new TopicPartition(TOPIC_A_DLQ, r.partition());
+    public DefaultErrorHandler errorHandler(KafkaTemplate<String, String> kafkaTemplate) {
+        CustomDeadLetterPublishingRecoverer customDeadLetterPublishingRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
+            return new TopicPartition(TOPIC_A_DLQ, consumerRecord.partition());
         });
 
-        recoverer.setHeadersFunction((record, exception) -> this.addErrorHeader(record, exception));
-        return new DefaultErrorHandler(recoverer, new FixedBackOff(DELAY_BETWEEN_ATTEMPTS, NUMBER_OF_ATTEMPTS));
+        customDeadLetterPublishingRecoverer.setHeadersFunction((record, exception) -> this.addErrorHeader(record, exception));
+        return new DefaultErrorHandler(customDeadLetterPublishingRecoverer, new FixedBackOff(DELAY_BETWEEN_ATTEMPTS, NUMBER_OF_ATTEMPTS));
     }
 
     //Não utilizado juntamente com o tratamento de erro que produz na DLQ.
@@ -101,8 +101,8 @@ public class KafkaConfig {
         return new KafkaTemplate<>(producerFactory());
     }
 
-    private Headers addErrorHeader(ConsumerRecord<?, ?> record, Exception exception) {
-        Headers headers = record.headers();
+    private Headers addErrorHeader(ConsumerRecord<?, ?> consumerRecord, Exception exception) {
+        Headers headers = consumerRecord.headers();
         headers.add(DEAD_LETTER_REASON_HEADER, exception.getMessage().getBytes());
         return headers;
     }
