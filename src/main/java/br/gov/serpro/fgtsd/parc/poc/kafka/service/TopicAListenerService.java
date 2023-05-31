@@ -2,14 +2,19 @@ package br.gov.serpro.fgtsd.parc.poc.kafka.service;
 
 import br.gov.serpro.fgtsd.parc.poc.kafka.model.Message;
 import br.gov.serpro.fgtsd.parc.poc.kafka.repository.MessageRepository;
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Collections;
 
 @Service
 public class TopicAListenerService {
@@ -57,14 +62,24 @@ public class TopicAListenerService {
 
     Teste 4: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B. Sem configurar o bean kafkaTransactionManager no consumidor.
     Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagem do tópico B não foi comitada.
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+
+    Teste 5: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B. Sem configurar o bean kafkaTransactionManager no consumidor mas usando o método kafkaTemplate.sendOffsetsToTransaction no final da execução do listener.
+    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagem do tópico B não foi comitada.
+
+    Teste 6: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após chamar kafkaTemplate.sendOffsetsToTransaction no final do método. Sem configurar o bean kafkaTransactionManager no consumidor.
+    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagens dos tópicos B e C não foram comitadas.
+
+    Teste 6: Usando o mesmo kafkaTemplate ao produzir na DLQ e chamando o kafkaTemplate.sendOffsetsToTransaction no final do método. Sem configurar o bean kafkaTransactionManager no consumidor.
+    Resultado: A mensagem não foi enviada para a DLQ e o offset do consumidor foi comitado com o "sendOffsetsToTransaction". A mensagens dos tópicos B e C foram comitadas normalmente.
+    */
+    @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
-    public void processMessage(String messageTopicA) {
+    public void processMessage(ConsumerRecord<String, String> record, ConsumerGroupMetadata groupMetadata) {
         LOGGER.info("Início do processamento da mensagem do tópico A...");
-        saveMessageDataBase(messageTopicA);
-        sendKafkaMessages(messageTopicA);
+        saveMessageDataBase(record.value());
+        sendKafkaMessages(record.value());
         LOGGER.info("Fim do processamento da mensagem do tópico A...");
+        kafkaTemplate.sendOffsetsToTransaction(Collections.singletonMap(new TopicPartition(record.topic(), record.partition()), new OffsetAndMetadata(record.offset() + 1)), groupMetadata);
     }
 
     private void saveMessageDataBase(String messageTopicA) {
@@ -76,11 +91,6 @@ public class TopicAListenerService {
         var messageTopicB = messageTopicA + " - Destinada ao tópico B";
         var messageTopicC = messageTopicA + " - Destinada ao tópico C";
         kafkaTemplate.send(TOPIC_B, messageTopicB);
-
-        if (1 == 1) {
-            throw new RuntimeException();
-        }
-
         kafkaTemplate.send(TOPIC_C, messageTopicC);
     }
 }
