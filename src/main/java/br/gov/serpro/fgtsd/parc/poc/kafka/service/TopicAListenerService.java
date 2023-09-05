@@ -1,5 +1,7 @@
 package br.gov.serpro.fgtsd.parc.poc.kafka.service;
 
+import br.gov.serpro.fgtsd.parc.poc.kafka.exception.ConsumerProblemException;
+import br.gov.serpro.fgtsd.parc.poc.kafka.exception.ProducerProblemException;
 import br.gov.serpro.fgtsd.parc.poc.kafka.model.Message;
 import br.gov.serpro.fgtsd.parc.poc.kafka.repository.MessageRepository;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -19,8 +21,10 @@ import java.util.Collections;
 @Service
 public class TopicAListenerService {
 
+    private static final String CONSUMER_PROBLEM_IDENTIFICATION = "problema_consumidor";
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicAListenerService.class);
     private static final String GROUP_ID = "id_grupo";
+    private static final String PRODUCER_PROBLEM_IDENTIFICATION = "problema_produtor";
     private static final String TOPIC_A = "topico_a";
     private static final String TOPIC_B = "topico_b";
     private static final String TOPIC_C = "topico_c";
@@ -76,6 +80,15 @@ public class TopicAListenerService {
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
     public void processMessage(Consumer<String, String> consumer, ConsumerRecord<String, String> consumerRecord) {
         LOGGER.info("Início do processamento da mensagem do tópico A...");
+
+        if (consumerRecord.value().contains(CONSUMER_PROBLEM_IDENTIFICATION)) {
+            throw new ConsumerProblemException("Problema no consumidor. Enviando para a DLQ.");
+        }
+
+        if (consumerRecord.value().contains(PRODUCER_PROBLEM_IDENTIFICATION)) {
+            throw new ProducerProblemException("Problema no produtor. Enviando para a DLQ.");
+        }
+
         saveMessageDataBase(consumerRecord.value());
         sendKafkaMessages(consumerRecord.value());
         LOGGER.info("Fim do processamento da mensagem do tópico A...");

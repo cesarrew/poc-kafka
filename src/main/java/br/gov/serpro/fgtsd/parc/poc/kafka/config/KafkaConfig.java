@@ -1,5 +1,7 @@
 package br.gov.serpro.fgtsd.parc.poc.kafka.config;
 
+import br.gov.serpro.fgtsd.parc.poc.kafka.exception.ConsumerProblemException;
+import br.gov.serpro.fgtsd.parc.poc.kafka.exception.ProducerProblemException;
 import br.gov.serpro.fgtsd.parc.poc.kafka.recover.CustomDeadLetterPublishingRecoverer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -13,6 +15,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.*;
+import org.springframework.kafka.listener.CommonDelegatingErrorHandler;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -28,7 +31,8 @@ public class KafkaConfig {
     private static final String DEAD_LETTER_REASON_HEADER = "dead-letter-reason";
     private static final String CONSUMER_ISOLATION_LEVEL = "read_committed";
     private static final Integer NUMBER_OF_ATTEMPTS = 3;
-    private static final String TOPIC_A_DLQ = "topico_a_dlq";
+    private static final String TOPIC_A_CONSUMER_DLQ = "topico_a_consumer_dlq";
+    private static final String TOPIC_A_PRODUCER_DLQ = "topico_a_producer_dlq";
     private static final String PRODUCER_TRANSACTIONAL_ID = "id_transacao";
 
     @Bean
@@ -54,13 +58,28 @@ public class KafkaConfig {
     }
 
     @Bean
-    public DefaultErrorHandler errorHandler(KafkaTemplate<String, String> kafkaTemplate) {
-        CustomDeadLetterPublishingRecoverer customDeadLetterPublishingRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
-            return new TopicPartition(TOPIC_A_DLQ, consumerRecord.partition());
+    public CommonDelegatingErrorHandler errorHandler(KafkaTemplate<String, String> kafkaTemplate) {
+        var defaultErrorHandler = new DefaultErrorHandler(new FixedBackOff(DELAY_BETWEEN_ATTEMPTS, NUMBER_OF_ATTEMPTS));
+
+        var consumerDLQRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
+            return new TopicPartition(TOPIC_A_CONSUMER_DLQ, consumerRecord.partition());
         });
 
-        customDeadLetterPublishingRecoverer.setHeadersFunction((record, exception) -> this.addErrorHeader(record, exception));
-        return new DefaultErrorHandler(customDeadLetterPublishingRecoverer, new FixedBackOff(DELAY_BETWEEN_ATTEMPTS, NUMBER_OF_ATTEMPTS));
+        consumerDLQRecoverer.setHeadersFunction((record, exception) -> this.addErrorHeader(record, exception));
+        var consumerErrorHandler = new DefaultErrorHandler(consumerDLQRecoverer);
+
+        var producerDLQRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
+            return new TopicPartition(TOPIC_A_PRODUCER_DLQ, consumerRecord.partition());
+        });
+
+        producerDLQRecoverer.setHeadersFunction((record, exception) -> this.addErrorHeader(record, exception));
+        var producerErrorHandler = new DefaultErrorHandler(producerDLQRecoverer);
+
+        var commonDelegatingErrorHandler = new CommonDelegatingErrorHandler(defaultErrorHandler);
+        commonDelegatingErrorHandler.addDelegate(ConsumerProblemException.class, consumerErrorHandler);
+        commonDelegatingErrorHandler.addDelegate(ProducerProblemException.class, producerErrorHandler);
+
+        return commonDelegatingErrorHandler;
     }
 
     //Não utilizado juntamente com o tratamento de erro que produz na DLQ.
