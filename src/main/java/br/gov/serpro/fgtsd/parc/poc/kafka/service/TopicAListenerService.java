@@ -37,6 +37,19 @@ public class TopicAListenerService {
     private MessageRepository messageRepository;
 
     /*
+    Comandos de terminal para uso do servidor Kafka e execução do exemplo:
+
+    Inicializar Zookeeper: bin/zookeeper-server-start.sh config/zookeeper.properties
+    Inicializar Kafka: bin/kafka-server-start.sh config/server.properties
+    Produzir mensagens no topico_a: bin/kafka-console-producer.sh --topic topico_a --bootstrap-server localhost:9092
+    Consumir mensagens do topico_a: bin/kafka-console-consumer.sh --topic topico_a --from-beginning --bootstrap-server localhost:9092 --isolation-level=read_committed
+    Consumir mensagens do topico_b: bin/kafka-console-consumer.sh --topic topico_b --from-beginning --bootstrap-server localhost:9092 --isolation-level=read_committed
+    Consumir mensagens do topico_c: bin/kafka-console-consumer.sh --topic topico_c --from-beginning --bootstrap-server localhost:9092 --isolation-level=read_committed
+    Consumir mensagens do topico_a_consumer_dlq: bin/kafka-console-consumer.sh --topic topico_a_consumer_dlq --from-beginning --bootstrap-server localhost:9092 --isolation-level=read_committed
+    Consumir mensagens do topico_a_producer_dlq: bin/kafka-console-consumer.sh --topic topico_a_producer_dlq --from-beginning --bootstrap-server localhost:9092 --isolation-level=read_committed
+     */
+
+    /*
     Caso 1
     ------
 
