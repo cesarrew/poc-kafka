@@ -23,6 +23,7 @@ public class TopicAListenerService {
 
     private static final String CONSUMER_PROBLEM_IDENTIFICATION = "problema_consumidor";
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicAListenerService.class);
+    private static final String GENERAL_PROBLEM_IDENTIFICATION = "problema_geral";
     private static final String GROUP_ID = "id_grupo";
     private static final String PRODUCER_PROBLEM_IDENTIFICATION = "problema_produtor";
     private static final String TOPIC_A = "topico_a";
@@ -87,6 +88,10 @@ public class TopicAListenerService {
 
         if (consumerRecord.value().contains(PRODUCER_PROBLEM_IDENTIFICATION)) {
             throw new ProducerProblemException("Problema no produtor. Enviando para a DLQ.");
+        }
+
+        if (consumerRecord.value().contains(GENERAL_PROBLEM_IDENTIFICATION)) {
+            throw new RuntimeException("Problema no produtor. Enviando para a DLQ.");
         }
 
         saveMessageDataBase(consumerRecord.value());

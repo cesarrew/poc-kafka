@@ -30,7 +30,7 @@ public class KafkaConfig {
     private static final String BOOTSTRAP_SERVERS = "localhost:9092";
     private static final String DEAD_LETTER_REASON_HEADER = "dead-letter-reason";
     private static final String CONSUMER_ISOLATION_LEVEL = "read_committed";
-    private static final Integer NUMBER_OF_ATTEMPTS = 3;
+    private static final Integer NUMBER_OF_ATTEMPTS = Integer.MAX_VALUE;
     private static final String TOPIC_A_CONSUMER_DLQ = "topico_a_consumer_dlq";
     private static final String TOPIC_A_PRODUCER_DLQ = "topico_a_producer_dlq";
     private static final String PRODUCER_TRANSACTIONAL_ID = "id_transacao";
