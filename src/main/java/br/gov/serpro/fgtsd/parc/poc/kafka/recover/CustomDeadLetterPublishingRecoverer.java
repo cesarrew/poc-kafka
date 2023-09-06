@@ -9,6 +9,7 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 
 import java.util.function.BiFunction;
 
+//Classe criada para customizar a mensagem a ser enviada para a DLQ.
 public class CustomDeadLetterPublishingRecoverer extends DeadLetterPublishingRecoverer {
 
     public CustomDeadLetterPublishingRecoverer(KafkaOperations<?, ?> template, BiFunction<ConsumerRecord<?, ?>, Exception, TopicPartition> destinationResolver) {
@@ -17,7 +18,7 @@ public class CustomDeadLetterPublishingRecoverer extends DeadLetterPublishingRec
 
     @Override
     protected ProducerRecord<Object, Object> createProducerRecord(ConsumerRecord<?, ?> record, TopicPartition topicPartition, Headers headers, byte[] key, byte[] value) {
-        String customValue = "Mensagem para o tópico DLQ: " + record.value();
+        var customValue = "Mensagem para o tópico DLQ: " + record.value();
         return new ProducerRecord<>(topicPartition.topic(), topicPartition.partition(), record.key(), customValue, headers);
     }
 }

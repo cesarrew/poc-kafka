@@ -37,7 +37,7 @@ public class KafkaConfig {
 
     @Bean
     public ConsumerFactory<String, String> consumerFactory() {
-        final Map<String, Object> configProps = generateConnectionProperties();
+        var configProps = generateConnectionProperties();
 
         //Necessário para que o consumidor apenas processe mensagens comitadas ou que não estejam em uma transação.
         configProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, CONSUMER_ISOLATION_LEVEL);
@@ -47,38 +47,26 @@ public class KafkaConfig {
 
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
-        ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        var factory = new ConcurrentKafkaListenerContainerFactory<String, String>();
 
         //Necessário ser configurado explicitamente no kafkaListenerContainerFactory. Caso contrário, o commit dos offsets será pelo método "commitSync", e não junto com a transação com o método "sendOffsetsToTransaction". O problema é usar juntamente com o envio para DLQ. Quando isso acontece, mensagens produzidas que deveriam ter sido abortadas são comitadas juntamente com o offset consumido.
         //factory.getContainerProperties().setTransactionManager(kafkaTransactionManager());
 
         factory.setConsumerFactory(consumerFactory());
+
+        //Define o uso do error handler customizado.
         factory.setCommonErrorHandler(errorHandler(kafkaTemplate()));
+
         return factory;
     }
 
+
+    //Cria um error handler que delega para outros error handlers a tarefa de tratamento de erro dependendo da exceção.
     @Bean
     public CommonDelegatingErrorHandler errorHandler(KafkaTemplate<String, String> kafkaTemplate) {
-        var defaultErrorHandler = new DefaultErrorHandler(new FixedBackOff(DELAY_BETWEEN_ATTEMPTS, NUMBER_OF_ATTEMPTS));
-
-        var consumerDLQRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
-            return new TopicPartition(TOPIC_A_CONSUMER_DLQ, consumerRecord.partition());
-        });
-
-        consumerDLQRecoverer.setHeadersFunction((record, exception) -> this.addErrorHeader(record, exception));
-        var consumerErrorHandler = new DefaultErrorHandler(consumerDLQRecoverer);
-
-        var producerDLQRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
-            return new TopicPartition(TOPIC_A_PRODUCER_DLQ, consumerRecord.partition());
-        });
-
-        producerDLQRecoverer.setHeadersFunction((record, exception) -> this.addErrorHeader(record, exception));
-        var producerErrorHandler = new DefaultErrorHandler(producerDLQRecoverer);
-
-        var commonDelegatingErrorHandler = new CommonDelegatingErrorHandler(defaultErrorHandler);
-        commonDelegatingErrorHandler.addDelegate(ConsumerProblemException.class, consumerErrorHandler);
-        commonDelegatingErrorHandler.addDelegate(ProducerProblemException.class, producerErrorHandler);
-
+        var commonDelegatingErrorHandler = new CommonDelegatingErrorHandler(generateGeneralErrorHandler());
+        commonDelegatingErrorHandler.addDelegate(ConsumerProblemException.class, generateConsumerErrorHandler(kafkaTemplate));
+        commonDelegatingErrorHandler.addDelegate(ProducerProblemException.class, generateProducerErrorHandler(kafkaTemplate));
         return commonDelegatingErrorHandler;
     }
 
@@ -101,7 +89,7 @@ public class KafkaConfig {
 
     @Bean
     public ProducerFactory<String, String> producerFactory() {
-        Map<String, Object> configProps = generateConnectionProperties();
+        var configProps = generateConnectionProperties();
 
         //Garante que a partição terá exatamente uma mensagem, sem duplicações.
         configProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
@@ -121,14 +109,39 @@ public class KafkaConfig {
     }
 
     private Headers addErrorHeader(ConsumerRecord<?, ?> consumerRecord, Exception exception) {
-        Headers headers = consumerRecord.headers();
+        var headers = consumerRecord.headers();
         headers.add(DEAD_LETTER_REASON_HEADER, exception.getMessage().getBytes());
         return headers;
     }
 
     private Map<String, Object> generateConnectionProperties() {
-        Map<String, Object> configProps = new HashMap<>();
+        var configProps = new HashMap<String, Object>();
         configProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS);
         return configProps;
+    }
+
+    //Cria um handler que envia a mensagem Kafka para a DLQ criada para posterior tratamento pelo consumidor.
+    private DefaultErrorHandler generateConsumerErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
+        var consumerDLQRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
+            return new TopicPartition(TOPIC_A_CONSUMER_DLQ, consumerRecord.partition());
+        });
+
+        consumerDLQRecoverer.setHeadersFunction(this::addErrorHeader);
+        return new DefaultErrorHandler(consumerDLQRecoverer);
+    }
+
+    //Cria um handler para tratar exceções não mapeadas. O comportamente é fazer novas tentativas de processamento de tempos em tempos.
+    private DefaultErrorHandler generateGeneralErrorHandler() {
+        return new DefaultErrorHandler(new FixedBackOff(DELAY_BETWEEN_ATTEMPTS, NUMBER_OF_ATTEMPTS));
+    }
+
+    //Cria um handler que envia a mensagem Kafka para a DLQ criada para posterior tratamento pelo produtor.
+    private DefaultErrorHandler generateProducerErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
+        var producerDLQRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
+            return new TopicPartition(TOPIC_A_PRODUCER_DLQ, consumerRecord.partition());
+        });
+
+        producerDLQRecoverer.setHeadersFunction(this::addErrorHeader);
+        return new DefaultErrorHandler(producerDLQRecoverer);
     }
 }
