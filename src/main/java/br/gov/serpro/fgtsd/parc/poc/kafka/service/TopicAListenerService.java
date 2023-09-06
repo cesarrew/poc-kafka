@@ -64,6 +64,8 @@ public class TopicAListenerService {
     Teste 3: Lançando exceção após produzir mensagem do tópico B.
     Resultado: É feito rollback na transação de forma geral, incluindo consumidor, banco e produtor. A mensagem do tópico B é produzida, mas não é comitada.
 
+    Conclusão caso 1: Quando não se usa DLQ, deve-se usar um único produtor com um único transaction id (quando uma única transação é desejada). O kafkaTransactionManager deve ser configurado no consumidor para este participar da transação sem precisar usar o método kafkaTemplate.sendOffsetsToTransaction.
+
     Caso 2
     ------
 
@@ -89,6 +91,8 @@ public class TopicAListenerService {
 
     Teste 6: Usando o mesmo kafkaTemplate ao produzir na DLQ e chamando o kafkaTemplate.sendOffsetsToTransaction no final do método. Sem configurar o bean kafkaTransactionManager no consumidor.
     Resultado: A mensagem não foi enviada para a DLQ e o offset do consumidor foi comitado com o "sendOffsetsToTransaction". A mensagens dos tópicos B e C foram comitadas normalmente.
+
+    Conclusão caso 2: Nesse caso, o kafkaTransactionManager não pode ser configurado no consumidor porque em caso de exceção e envio da mensagem para a DLQ, o consumidor usa o "sendOffsetsToTransaction" e comita também a mensagem do, no caso, tópico B, o que não é desejado. É necessário então usar o kafkaTemplate.sendOffsetsToTransaction no final do método listener para que, no caminho feliz, o consumidor use o método Kafka "sendOffsetsToTransaction" e participe da transação.
     */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
@@ -104,7 +108,7 @@ public class TopicAListenerService {
         }
 
         if (consumerRecord.value().contains(GENERAL_PROBLEM_IDENTIFICATION)) {
-            throw new RuntimeException("Problema no produtor. Enviando para a DLQ.");
+            throw new RuntimeException("Problema não mapeado. Novas tentativas de processamento serão feitas.");
         }
 
         saveMessageDataBase(consumerRecord.value());
