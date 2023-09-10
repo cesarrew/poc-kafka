@@ -100,9 +100,9 @@ public class TopicAListenerService {
     Consumindo mensagem do tópico A, gravando em banco e depois produzindo mensagens para os tópicos B e C. Enviando para a DLQ do consumidor em caso de erro no consumidor, DLQ do produtor em caso de erro no produtor e tentativas infinitas em caso de erro não mapeado.
 
     Teste 1: Usando o CommonDelegatingErrorHandler para delegar o problema para os handlers responsáveis.
-    Resultado: O tratamento de erros foi feito adequadamente de acordo com o tipo de exceção.
+    Resultado: O tratamento de erros foi feito adequadamente de acordo com o tipo de exceção. Além disso, o rollback foi feito no banco ao enviar para a DLQ.
 
-    Conclusão caso 2: Pode-se mapear problemas conhecidos lançando determinadas exceções e usar o CommonDelegatingErrorHandler para gerenciar qual handler irá tratar.
+    Conclusão caso 2: Pode-se mapear problemas conhecidos lançando determinadas exceções e usar o CommonDelegatingErrorHandler para gerenciar qual handler irá tratar. É feito também rollback no banco em caso de necessidade de enviar para a DLQ, o que é desejável.
     */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
