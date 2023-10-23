@@ -1,4 +1,4 @@
-package br.gov.serpro.fgtsd.parc.poc.kafka;
+package exemplo.poc.kafka;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

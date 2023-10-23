@@ -1,4 +1,4 @@
-package br.gov.serpro.fgtsd.parc.poc.kafka.model;
+package exemplo.poc.kafka.model;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;

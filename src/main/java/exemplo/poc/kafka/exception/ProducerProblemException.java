@@ -1,4 +1,4 @@
-package br.gov.serpro.fgtsd.parc.poc.kafka.exception;
+package exemplo.poc.kafka.exception;
 
 public class ProducerProblemException extends RuntimeException {
 

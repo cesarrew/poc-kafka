@@ -1,6 +1,6 @@
-package br.gov.serpro.fgtsd.parc.poc.kafka.repository;
+package exemplo.poc.kafka.repository;
 
-import br.gov.serpro.fgtsd.parc.poc.kafka.model.Message;
+import exemplo.poc.kafka.model.Message;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

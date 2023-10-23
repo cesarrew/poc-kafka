@@ -1,4 +1,4 @@
-package br.gov.serpro.fgtsd.parc.poc.kafka.recover;
+package exemplo.poc.kafka.recover;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;

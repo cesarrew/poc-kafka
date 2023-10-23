@@ -1,9 +1,9 @@
-package br.gov.serpro.fgtsd.parc.poc.kafka.service;
+package exemplo.poc.kafka.service;
 
-import br.gov.serpro.fgtsd.parc.poc.kafka.exception.ConsumerProblemException;
-import br.gov.serpro.fgtsd.parc.poc.kafka.exception.ProducerProblemException;
-import br.gov.serpro.fgtsd.parc.poc.kafka.model.Message;
-import br.gov.serpro.fgtsd.parc.poc.kafka.repository.MessageRepository;
+import exemplo.poc.kafka.exception.ConsumerProblemException;
+import exemplo.poc.kafka.model.Message;
+import exemplo.poc.kafka.repository.MessageRepository;
+import exemplo.poc.kafka.exception.ProducerProblemException;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;

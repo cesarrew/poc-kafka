@@ -1,8 +1,8 @@
-package br.gov.serpro.fgtsd.parc.poc.kafka.config;
+package exemplo.poc.kafka.config;
 
-import br.gov.serpro.fgtsd.parc.poc.kafka.exception.ConsumerProblemException;
-import br.gov.serpro.fgtsd.parc.poc.kafka.exception.ProducerProblemException;
-import br.gov.serpro.fgtsd.parc.poc.kafka.recover.CustomDeadLetterPublishingRecoverer;
+import exemplo.poc.kafka.exception.ConsumerProblemException;
+import exemplo.poc.kafka.exception.ProducerProblemException;
+import exemplo.poc.kafka.recover.CustomDeadLetterPublishingRecoverer;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
