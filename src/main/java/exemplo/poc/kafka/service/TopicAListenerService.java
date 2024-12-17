@@ -84,14 +84,14 @@ public class TopicAListenerService {
                 }
 
                 for (ConsumerRecord<String, String> consumerRecord : consumerRecords) {
-                    var processed = false;
+                    var consumerRecordProcessed = false;
 
-                    while (!processed) {
+                    while (!consumerRecordProcessed) {
                         try {
                             kafkaProducer.beginTransaction();
                             LOGGER.info("Início do processamento da mensagem do tópico A.");
 
-                            processed = new TransactionTemplate(platformTransactionManager).execute(transactionStatus -> {
+                            consumerRecordProcessed = new TransactionTemplate(platformTransactionManager).execute(transactionStatus -> {
                                 saveMessageDataBase(consumerRecord.value());
                                 sendKafkaMessage("Mensagem para o tópico B: " + consumerRecord.value(), TOPIC_B);
                                 sendKafkaMessage("Mensagem para o tópico C: " + consumerRecord.value(), TOPIC_C);
@@ -121,7 +121,7 @@ public class TopicAListenerService {
 
                             sendKafkaMessage("Mensagem para a DLQ do consumidor do tópico A: " + consumerRecord.value(), TOPIC_A_CONSUMER_DLQ);
                             sendOffsetsAndCommitTransaction(consumerRecord);
-                            processed = true;
+                            consumerRecordProcessed = true;
 
                             LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação kafka, rollback da transação de banco e fim do processamento do consumo da mensagem com envio para a DLQ do consumidor.");
                         } catch (ProducerProblemException ppe) {
@@ -132,7 +132,7 @@ public class TopicAListenerService {
 
                             sendKafkaMessage("Mensagem para a DLQ do produtor do tópico A: " + consumerRecord.value(), TOPIC_A_PRODUCER_DLQ);
                             sendOffsetsAndCommitTransaction(consumerRecord);
-                            processed = true;
+                            consumerRecordProcessed = true;
 
                             LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação kafka, rollback da transação de banco e fim do processamento do consumo da mensagem com envio para a DLQ do produtor.");
                         } catch (RuntimeException re) {
