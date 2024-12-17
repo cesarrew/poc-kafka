@@ -23,6 +23,7 @@ import java.util.Collections;
 public class TopicAListenerService {
 
     private static final String CONSUMER_PROBLEM_IDENTIFICATION = "problema_consumidor";
+    private static final Long DELAY_BETWEEN_ATTEMPTS = 5_000L;
     private static final String GENERAL_PROBLEM_IDENTIFICATION = "problema_geral";
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicAListenerService.class);
     private static final String PRODUCER_PROBLEM_IDENTIFICATION = "problema_produtor";
@@ -123,10 +124,9 @@ public class TopicAListenerService {
                     continue;
                 }
 
-                kafkaProducer.beginTransaction();
-
-                try {
-                    for (ConsumerRecord<String, String> consumerRecord : consumerRecords) {
+                for (ConsumerRecord<String, String> consumerRecord : consumerRecords) {
+                    try {
+                        kafkaProducer.beginTransaction();
                         LOGGER.info("Início do processamento da mensagem do tópico A.");
 
                         if (consumerRecord.value().contains(CONSUMER_PROBLEM_IDENTIFICATION)) {
@@ -146,35 +146,30 @@ public class TopicAListenerService {
 
                         var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
                         kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
-                        LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação e fim do processamento.");
+                        kafkaProducer.commitTransaction();
+
+                        LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação, commit da transação e fim do processamento do consumo da mensagem.");
+                    } catch (ConsumerProblemException cpe) {
+                        LOGGER.error("O erro ConsumerProblemException ocorreu ao processar a mensagem do tópico A. Enviando para a DLQ do consumidor.");
+                        kafkaProducer.abortTransaction();
+
+                        LOGGER.info("Inciando uma nova transação para enviar a mensagem para a DLQ do consumidor.");
+                        kafkaProducer.beginTransaction();
+
+                        var messageTopicAConsumerDLQ = "Mensagem para a DLQ do consumidor do tópico A: " + consumerRecord.value();
+                        var producerRecordTopicAConsumerDLQ = new ProducerRecord<String, String>(TOPIC_A_CONSUMER_DLQ, messageTopicAConsumerDLQ);
+                        kafkaProducer.send(producerRecordTopicAConsumerDLQ);
+
+                        var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
+                        kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
+                        kafkaProducer.commitTransaction();
+
+                        LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação, commit da transação e fim do processamento do consumo da mensagem com envio para a DLQ do consumidor.");
+                    } catch (RuntimeException re) {
+                        LOGGER.error("O erro \"{}\" ocorreu ao processar a mensagem do tópico A. Reprocessando em 5 segundos.", re.getMessage());
+                        kafkaProducer.abortTransaction();
+                        Thread.sleep(DELAY_BETWEEN_ATTEMPTS);
                     }
-
-                    kafkaProducer.commitTransaction();
-                    LOGGER.info("Transação comitada com sucesso.");
-                } catch (ConsumerProblemException cpe) {
-                    LOGGER.error("O erro ConsumerProblemException ocorreu ao processar a mensagem do tópico A. Enviando para a DLQ do consumidor.");
-                    kafkaProducer.abortTransaction();
-
-                    LOGGER.info("Inciando uma nova transação para enviar a mensagem para a DLQ do consumidor.");
-                    kafkaProducer.beginTransaction();
-
-                    var messageTopicAConsumerDLQ = "Mensagem para a DLQ do consumidor do tópico A: " + consumerRecords.get;
-                    var producerRecordTopicB = new ProducerRecord<String, String>(TOPIC_B, messageTopicB);
-                    kafkaProducer.send(producerRecordTopicB);
-                    LOGGER.info("Mensagem para o tópico B enviada.");
-
-                    for (ConsumerRecord<String, String> record : consumerRecords) {
-                        kaf.send(new ProducerRecord<>(DLQ_TOPIC, record.key(), "xyz"));
-                    }
-
-                    // Commit offsets to mark the message as consumed
-                    producer.sendOffsetsToTransaction(getConsumerOffsets(records), GROUP_ID);
-                    producer.commitTransaction();
-                    System.out.println("Message sent to DLQ and offsets committed.");
-                } catch (RuntimeException re) {
-                    LOGGER.error("O erro \"{}\" ocorreu ao processar a mensagem do tópico A. Reprocessando em 10 segundos.", re.getMessage());
-                    kafkaProducer.abortTransaction();
-                    Thread.sleep(10000);
                 }
             }
         } finally {
