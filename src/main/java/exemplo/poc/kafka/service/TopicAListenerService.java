@@ -60,59 +60,15 @@ public class TopicAListenerService {
      */
 
     /*
-    Caso 1
-    ------
-
-    Consumindo mensagem do tópico A, gravando em banco e depois produzindo mensagens para os tópicos B e C. Tentativas infinitas em caso de erro.
-
-    Teste 1: Sem configurar o bean kafkaTransactionManager no consumidor. Usando um único produtor com o mesmo transaction id.
-    Resultado: A transação funciona entre produtores. O consumidor fica fora da transação, pois o método "commitSync" é usando para envio dos offsets.
-
-    Teste 2: Configurando o bean kafkaTransactionManager no consumidor. Usando um único produtor com o mesmo transaction id.
-    Resultado: A transação funciona de modo geral. O commit dos offsets fica ligado ao commit da transação. Uso do método "sendOffsetsToTransaction" para isso.
-
-    Teste 3: Lançando exceção após produzir mensagem do tópico B. Usando um único produtor com o mesmo transaction id.
-    Resultado: É feito rollback na transação de forma geral, incluindo consumidor, banco e produtor. A mensagem do tópico B é produzida, mas não é comitada.
-
-    Conclusão caso 1: Quando não se usa DLQ, deve-se usar um único produtor com um único transaction id (quando uma única transação é desejada). O kafkaTransactionManager deve ser configurado no consumidor para este participar da transação sem precisar usar o método kafkaTemplate.sendOffsetsToTransaction.
-
-    Caso 2
-    ------
-
-    Consumindo mensagem do tópico A, gravando em banco e depois produzindo mensagens para os tópicos B e C. Enviando para DLQ após 3 tentativas.
-
-    Teste 1: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B.
-    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "sendOffsetsToTransaction". No entanto, a mensagem do tópico B também foi comitada.
-
-    Teste 2: Usando um kafkaTemplate diferente com outro transaction id ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B.
-    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "sendOffsetsToTransaction". No entanto, a mensagem do tópico B também foi comitada.
-
-    Teste 3: Usando um kafkaTemplate diferente com outro transaction id ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B. Sem configurar o bean kafkaTransactionManager no consumidor.
-    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagem do tópico B não foi comitada.
-
-    Teste 4: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B. Sem configurar o bean kafkaTransactionManager no consumidor.
-    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagem do tópico B não foi comitada.
-
-    Teste 5: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após produzir mensagem do tópico B. Sem configurar o bean kafkaTransactionManager no consumidor mas usando o método kafkaTemplate.sendOffsetsToTransaction no final da execução do listener.
-    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagem do tópico B não foi comitada.
-
-    Teste 6: Usando o mesmo kafkaTemplate ao produzir na DLQ e lançando exceção após chamar kafkaTemplate.sendOffsetsToTransaction no final do método. Sem configurar o bean kafkaTransactionManager no consumidor.
-    Resultado: A mensagem foi comitada na DLQ e offset do consumidor comitado com o "commitSync". A mensagens dos tópicos B e C não foram comitadas.
-
-    Teste 6: Usando o mesmo kafkaTemplate ao produzir na DLQ e chamando o kafkaTemplate.sendOffsetsToTransaction no final do método. Sem configurar o bean kafkaTransactionManager no consumidor.
-    Resultado: A mensagem não foi enviada para a DLQ e o offset do consumidor foi comitado com o "sendOffsetsToTransaction". A mensagens dos tópicos B e C foram comitadas normalmente.
-
-    Conclusão caso 2: Nesse caso, o kafkaTransactionManager não pode ser configurado no consumidor porque em caso de exceção e envio da mensagem para a DLQ, o consumidor usa o "sendOffsetsToTransaction" e comita também a mensagem do, no caso, tópico B, o que não é desejado. É necessário então usar o kafkaTemplate.sendOffsetsToTransaction no final do método listener para que, no caminho feliz, o consumidor use o método Kafka "sendOffsetsToTransaction" e participe da transação.
-
-    Caso 3
-    ------
+    Caso 4 - Uso da API nativa do Kafka
+    -----------------------------------
 
     Consumindo mensagem do tópico A, gravando em banco e depois produzindo mensagens para os tópicos B e C. Enviando para a DLQ do consumidor em caso de erro no consumidor, DLQ do produtor em caso de erro no produtor e tentativas infinitas em caso de erro não mapeado.
 
-    Teste 1: Usando o CommonDelegatingErrorHandler para delegar o problema para os handlers responsáveis.
+    Teste 1: Usando loops e recursos da API nativa do Kafka.
     Resultado: O tratamento de erros foi feito adequadamente de acordo com o tipo de exceção. Além disso, o rollback foi feito no banco ao enviar para a DLQ.
 
-    Conclusão caso 2: Pode-se mapear problemas conhecidos lançando determinadas exceções e usar o CommonDelegatingErrorHandler para gerenciar qual handler irá tratar. É feito também rollback no banco em caso de necessidade de enviar para a DLQ, o que é desejável.
+    Conclusão caso 4: Pode-se mapear problemas conhecidos lançando determinadas exceções para determinar se será feito retry ou se será enviado para a DLQ do consumidor/produtor. É feito também rollback no banco em caso de necessidade de enviar para a DLQ, o que é necessário.
     */
     public void processMessage() throws InterruptedException {
         kafkaProducer.initTransactions();
@@ -137,7 +93,8 @@ public class TopicAListenerService {
 
                             processed = new TransactionTemplate(platformTransactionManager).execute(transactionStatus -> {
                                 saveMessageDataBase(consumerRecord.value());
-                                sendKafkaMessages(consumerRecord.value());
+                                sendKafkaMessage("Mensagem para o tópico B: " + consumerRecord.value(), TOPIC_B);
+                                sendKafkaMessage("Mensagem para o tópico C: " + consumerRecord.value(), TOPIC_C);
 
                                 if (consumerRecord.value().contains(CONSUMER_PROBLEM_IDENTIFICATION)) {
                                     throw new ConsumerProblemException("Problema no consumidor. Enviando para a DLQ.");
@@ -151,44 +108,30 @@ public class TopicAListenerService {
                                     throw new RuntimeException("Problema não mapeado. Novas tentativas de processamento serão feitas.");
                                 }
 
-                                var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
-                                kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
-                                kafkaProducer.commitTransaction();
+                                sendOffsetsAndCommitTransaction(consumerRecord);
 
                                 LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação, commit da transação e fim do processamento do consumo da mensagem.");
                                 return true;
                             });
                         } catch (ConsumerProblemException cpe) {
-                            LOGGER.error("O erro ConsumerProblemException ocorreu ao processar a mensagem do tópico A. Enviando para a DLQ do consumidor.");
-                            kafkaProducer.abortTransaction();
+                            LOGGER.error("O erro ConsumerProblemException ocorreu. Criando nova transação para envio para a DLQ do consumidor.");
 
-                            LOGGER.info("Inciando uma nova transação para enviar a mensagem para a DLQ do consumidor.");
+                            kafkaProducer.abortTransaction();
                             kafkaProducer.beginTransaction();
 
-                            var messageTopicAConsumerDLQ = "Mensagem para a DLQ do consumidor do tópico A: " + consumerRecord.value();
-                            var producerRecordTopicAConsumerDLQ = new ProducerRecord<String, String>(TOPIC_A_CONSUMER_DLQ, messageTopicAConsumerDLQ);
-                            kafkaProducer.send(producerRecordTopicAConsumerDLQ);
-
-                            var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
-                            kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
-                            kafkaProducer.commitTransaction();
+                            sendKafkaMessage("Mensagem para a DLQ do consumidor do tópico A: " + consumerRecord.value(), TOPIC_A_CONSUMER_DLQ);
+                            sendOffsetsAndCommitTransaction(consumerRecord);
                             processed = true;
 
                             LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação kafka, rollback da transação de banco e fim do processamento do consumo da mensagem com envio para a DLQ do consumidor.");
                         } catch (ProducerProblemException ppe) {
-                            LOGGER.error("O erro ProducerProblemException ocorreu ao processar a mensagem do tópico A. Enviando para a DLQ do produtor.");
-                            kafkaProducer.abortTransaction();
+                            LOGGER.error("O erro ProducerProblemException ocorreu. Criando nova transação para envio para a DLQ do produtor.");
 
-                            LOGGER.info("Inciando uma nova transação para enviar a mensagem para a DLQ do produtor.");
+                            kafkaProducer.abortTransaction();
                             kafkaProducer.beginTransaction();
 
-                            var messageTopicAProducerDLQ = "Mensagem para a DLQ do produtor do tópico A: " + consumerRecord.value();
-                            var producerRecordTopicAProducerDLQ = new ProducerRecord<String, String>(TOPIC_A_PRODUCER_DLQ, messageTopicAProducerDLQ);
-                            kafkaProducer.send(producerRecordTopicAProducerDLQ);
-
-                            var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
-                            kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
-                            kafkaProducer.commitTransaction();
+                            sendKafkaMessage("Mensagem para a DLQ do produtor do tópico A: " + consumerRecord.value(), TOPIC_A_PRODUCER_DLQ);
+                            sendOffsetsAndCommitTransaction(consumerRecord);
                             processed = true;
 
                             LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação kafka, rollback da transação de banco e fim do processamento do consumo da mensagem com envio para a DLQ do produtor.");
@@ -215,15 +158,15 @@ public class TopicAListenerService {
         LOGGER.info("Mensagem salva no banco de dados");
     }
 
-    private void sendKafkaMessages(String messageTopicA) {
-        var messageTopicB = "Mensagem para o tópico B: " + messageTopicA;
-        var producerRecordTopicB = new ProducerRecord<String, String>(TOPIC_B, messageTopicB);
+    private void sendKafkaMessage(String message, String topic) {
+        var producerRecordTopicB = new ProducerRecord<String, String>(topic, message);
         kafkaProducer.send(producerRecordTopicB);
-        LOGGER.info("Mensagem para o tópico B enviada.");
+        LOGGER.info("Mensagem para o tópico \"{}\" enviada.");
+    }
 
-        var messageTopicC = "Mensagem para o tópico C: " + messageTopicA;
-        var producerRecordTopicC = new ProducerRecord<String, String>(TOPIC_C, messageTopicC);
-        kafkaProducer.send(producerRecordTopicC);
-        LOGGER.info("Mensagem para o tópico C enviada.");
+    private void sendOffsetsAndCommitTransaction(ConsumerRecord<String, String> consumerRecord) {
+        var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
+        kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
+        kafkaProducer.commitTransaction();
     }
 }
