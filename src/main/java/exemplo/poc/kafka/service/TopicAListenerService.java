@@ -14,7 +14,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -41,6 +42,9 @@ public class TopicAListenerService {
 
     @Autowired
     private MessageRepository messageRepository;
+
+    @Autowired
+    private PlatformTransactionManager platformTransactionManager;
 
     /*
     Comandos de terminal para uso do servidor Kafka e execução do exemplo:
@@ -110,7 +114,6 @@ public class TopicAListenerService {
 
     Conclusão caso 2: Pode-se mapear problemas conhecidos lançando determinadas exceções e usar o CommonDelegatingErrorHandler para gerenciar qual handler irá tratar. É feito também rollback no banco em caso de necessidade de enviar para a DLQ, o que é desejável.
     */
-    @Transactional
     public void processMessage() throws InterruptedException {
         kafkaProducer.initTransactions();
 
@@ -125,50 +128,75 @@ public class TopicAListenerService {
                 }
 
                 for (ConsumerRecord<String, String> consumerRecord : consumerRecords) {
-                    try {
-                        kafkaProducer.beginTransaction();
-                        LOGGER.info("Início do processamento da mensagem do tópico A.");
+                    var processed = false;
 
-                        saveMessageDataBase(consumerRecord.value());
-                        sendKafkaMessages(consumerRecord.value());
+                    while (!processed) {
+                        try {
+                            kafkaProducer.beginTransaction();
+                            LOGGER.info("Início do processamento da mensagem do tópico A.");
 
-                        if (consumerRecord.value().contains(CONSUMER_PROBLEM_IDENTIFICATION)) {
-                            throw new ConsumerProblemException("Problema no consumidor. Enviando para a DLQ.");
+                            processed = new TransactionTemplate(platformTransactionManager).execute(transactionStatus -> {
+                                saveMessageDataBase(consumerRecord.value());
+                                sendKafkaMessages(consumerRecord.value());
+
+                                if (consumerRecord.value().contains(CONSUMER_PROBLEM_IDENTIFICATION)) {
+                                    throw new ConsumerProblemException("Problema no consumidor. Enviando para a DLQ.");
+                                }
+
+                                if (consumerRecord.value().contains(PRODUCER_PROBLEM_IDENTIFICATION)) {
+                                    throw new ProducerProblemException("Problema no produtor. Enviando para a DLQ.");
+                                }
+
+                                if (consumerRecord.value().contains(GENERAL_PROBLEM_IDENTIFICATION)) {
+                                    throw new RuntimeException("Problema não mapeado. Novas tentativas de processamento serão feitas.");
+                                }
+
+                                var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
+                                kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
+                                kafkaProducer.commitTransaction();
+
+                                LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação, commit da transação e fim do processamento do consumo da mensagem.");
+                                return true;
+                            });
+                        } catch (ConsumerProblemException cpe) {
+                            LOGGER.error("O erro ConsumerProblemException ocorreu ao processar a mensagem do tópico A. Enviando para a DLQ do consumidor.");
+                            kafkaProducer.abortTransaction();
+
+                            LOGGER.info("Inciando uma nova transação para enviar a mensagem para a DLQ do consumidor.");
+                            kafkaProducer.beginTransaction();
+
+                            var messageTopicAConsumerDLQ = "Mensagem para a DLQ do consumidor do tópico A: " + consumerRecord.value();
+                            var producerRecordTopicAConsumerDLQ = new ProducerRecord<String, String>(TOPIC_A_CONSUMER_DLQ, messageTopicAConsumerDLQ);
+                            kafkaProducer.send(producerRecordTopicAConsumerDLQ);
+
+                            var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
+                            kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
+                            kafkaProducer.commitTransaction();
+                            processed = true;
+
+                            LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação kafka, rollback da transação de banco e fim do processamento do consumo da mensagem com envio para a DLQ do consumidor.");
+                        } catch (ProducerProblemException ppe) {
+                            LOGGER.error("O erro ProducerProblemException ocorreu ao processar a mensagem do tópico A. Enviando para a DLQ do produtor.");
+                            kafkaProducer.abortTransaction();
+
+                            LOGGER.info("Inciando uma nova transação para enviar a mensagem para a DLQ do produtor.");
+                            kafkaProducer.beginTransaction();
+
+                            var messageTopicAProducerDLQ = "Mensagem para a DLQ do produtor do tópico A: " + consumerRecord.value();
+                            var producerRecordTopicAProducerDLQ = new ProducerRecord<String, String>(TOPIC_A_PRODUCER_DLQ, messageTopicAProducerDLQ);
+                            kafkaProducer.send(producerRecordTopicAProducerDLQ);
+
+                            var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
+                            kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
+                            kafkaProducer.commitTransaction();
+                            processed = true;
+
+                            LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação kafka, rollback da transação de banco e fim do processamento do consumo da mensagem com envio para a DLQ do produtor.");
+                        } catch (RuntimeException re) {
+                            LOGGER.error("O erro \"{}\" ocorreu ao processar a mensagem do tópico A. Reprocessando em 5 segundos.", re.getMessage());
+                            kafkaProducer.abortTransaction();
+                            Thread.sleep(DELAY_BETWEEN_ATTEMPTS);
                         }
-
-                        if (consumerRecord.value().contains(PRODUCER_PROBLEM_IDENTIFICATION)) {
-                            throw new ProducerProblemException("Problema no produtor. Enviando para a DLQ.");
-                        }
-
-                        if (consumerRecord.value().contains(GENERAL_PROBLEM_IDENTIFICATION)) {
-                            throw new RuntimeException("Problema não mapeado. Novas tentativas de processamento serão feitas.");
-                        }
-
-                        var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
-                        kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
-                        kafkaProducer.commitTransaction();
-
-                        LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação, commit da transação e fim do processamento do consumo da mensagem.");
-                    } catch (ConsumerProblemException cpe) {
-                        LOGGER.error("O erro ConsumerProblemException ocorreu ao processar a mensagem do tópico A. Enviando para a DLQ do consumidor.");
-                        kafkaProducer.abortTransaction();
-
-                        LOGGER.info("Inciando uma nova transação para enviar a mensagem para a DLQ do consumidor.");
-                        kafkaProducer.beginTransaction();
-
-                        var messageTopicAConsumerDLQ = "Mensagem para a DLQ do consumidor do tópico A: " + consumerRecord.value();
-                        var producerRecordTopicAConsumerDLQ = new ProducerRecord<String, String>(TOPIC_A_CONSUMER_DLQ, messageTopicAConsumerDLQ);
-                        kafkaProducer.send(producerRecordTopicAConsumerDLQ);
-
-                        var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
-                        kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
-                        kafkaProducer.commitTransaction();
-
-                        LOGGER.info("Envio do offset da mensagem do tópico A para ser incluída na transação, commit da transação e fim do processamento do consumo da mensagem com envio para a DLQ do consumidor.");
-                    } catch (RuntimeException re) {
-                        LOGGER.error("O erro \"{}\" ocorreu ao processar a mensagem do tópico A. Reprocessando em 5 segundos.", re.getMessage());
-                        kafkaProducer.abortTransaction();
-                        Thread.sleep(DELAY_BETWEEN_ATTEMPTS);
                     }
                 }
             }
