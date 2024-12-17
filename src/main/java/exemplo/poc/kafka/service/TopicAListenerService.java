@@ -199,6 +199,9 @@ public class TopicAListenerService {
                         }
                     }
                 }
+
+                var messageList = messageRepository.findAll();
+                LOGGER.info("Mensagens no banco de dados: {}", String.join(", ", messageList.stream().map(Message::getMessage).toList()));
             }
         } finally {
             kafkaConsumer.close();
