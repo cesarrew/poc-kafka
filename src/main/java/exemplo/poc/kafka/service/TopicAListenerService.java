@@ -129,6 +129,9 @@ public class TopicAListenerService {
                         kafkaProducer.beginTransaction();
                         LOGGER.info("Início do processamento da mensagem do tópico A.");
 
+                        saveMessageDataBase(consumerRecord.value());
+                        sendKafkaMessages(consumerRecord.value());
+
                         if (consumerRecord.value().contains(CONSUMER_PROBLEM_IDENTIFICATION)) {
                             throw new ConsumerProblemException("Problema no consumidor. Enviando para a DLQ.");
                         }
@@ -140,9 +143,6 @@ public class TopicAListenerService {
                         if (consumerRecord.value().contains(GENERAL_PROBLEM_IDENTIFICATION)) {
                             throw new RuntimeException("Problema não mapeado. Novas tentativas de processamento serão feitas.");
                         }
-
-                        saveMessageDataBase(consumerRecord.value());
-                        sendKafkaMessages(consumerRecord.value());
 
                         var offsetMap = Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1));
                         kafkaProducer.sendOffsetsToTransaction(offsetMap, kafkaConsumer.groupMetadata());
