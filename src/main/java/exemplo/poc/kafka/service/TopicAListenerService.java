@@ -161,7 +161,7 @@ public class TopicAListenerService {
     private void sendKafkaMessage(String message, String topic) {
         var producerRecordTopicB = new ProducerRecord<String, String>(topic, message);
         kafkaProducer.send(producerRecordTopicB);
-        LOGGER.info("Mensagem para o tópico \"{}\" enviada.");
+        LOGGER.info("Mensagem para o tópico \"{}\" enviada.", topic);
     }
 
     private void sendOffsetsAndCommitTransaction(ConsumerRecord<String, String> consumerRecord) {
