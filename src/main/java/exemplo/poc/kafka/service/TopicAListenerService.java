@@ -7,6 +7,7 @@ import exemplo.poc.kafka.repository.MessageRepository;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,9 +114,10 @@ public class TopicAListenerService {
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
     public void processMessage(Consumer<String, String> consumer, ConsumerRecord<String, String> consumerRecord) {
-        LOGGER.info("Início do processamento da mensagem do tópico A...");
+        LOGGER.info("Iniciando do processamento da mensagem do tópico A...");
         saveMessageDataBase(consumerRecord.value());
-        sendKafkaMessages(consumerRecord.value());
+        sendKafkaMessage("Mensagem para o tópico B: " + consumerRecord.value(), TOPIC_B);
+        sendKafkaMessage("Mensagem para o tópico C: " + consumerRecord.value(), TOPIC_C);
 
         if (consumerRecord.value().contains(CONSUMER_PROBLEM_IDENTIFICATION)) {
             throw new ConsumerProblemException("Problema no consumidor. Enviando para a DLQ.");
@@ -129,12 +131,14 @@ public class TopicAListenerService {
             throw new RuntimeException("Problema não mapeado. Novas tentativas de processamento serão feitas.");
         }
 
+        LOGGER.info("Enviando do offset da mensagem do tópico A para ser incluída na transação e encerrando o processamento do consumo da mensagem...");
+
         kafkaTemplate.sendOffsetsToTransaction(
                 Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1)),
                 consumer.groupMetadata()
         );
 
-        applicationEventPublisher.publishEvent("Evento de teste.");
+        applicationEventPublisher.publishEvent(consumerRecord.value());
         LOGGER.info("Fim do processamento da mensagem do tópico A...");
     }
 
@@ -145,15 +149,14 @@ public class TopicAListenerService {
     }
 
     private void saveMessageDataBase(String messageTopicA) {
+        LOGGER.info("Salvando mensagem no banco de dados...");
         var message = new Message(messageTopicA);
         messageRepository.save(message);
     }
 
-    private void sendKafkaMessages(String messageTopicA) {
-        var messageTopicB = "Mensagem para o tópico B: " + messageTopicA;
-        kafkaTemplate.send(TOPIC_B, messageTopicB);
-
-        var messageTopicC = "Mensagem para o tópico C: " + messageTopicA;
-        kafkaTemplate.send(TOPIC_C, messageTopicC);
+    private void sendKafkaMessage(String message, String topic) {
+        LOGGER.info("Enviando mensagem para o tópico \"{}\"...", topic);
+        var producerRecord = new ProducerRecord<String, String>(topic, message);
+        kafkaTemplate.send(topic, message);
     }
 }
