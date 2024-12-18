@@ -88,7 +88,7 @@ public class TopicAListenerService {
 
                     while (!consumerRecordProcessed) {
                         try {
-                            LOGGER.info("Iníciando do processamento da mensagem do tópico A...");
+                            LOGGER.info("Iniciando do processamento da mensagem do tópico A...");
                             kafkaProducer.beginTransaction();
 
                             consumerRecordProcessed = new TransactionTemplate(platformTransactionManager).execute(transactionStatus -> {
@@ -157,8 +157,8 @@ public class TopicAListenerService {
 
     private void sendKafkaMessage(String message, String topic) {
         LOGGER.info("Enviando mensagem para o tópico \"{}\"...", topic);
-        var producerRecordTopicB = new ProducerRecord<String, String>(topic, message);
-        kafkaProducer.send(producerRecordTopicB);
+        var producerRecord = new ProducerRecord<String, String>(topic, message);
+        kafkaProducer.send(producerRecord);
     }
 
     private void sendOffsetsAndCommitTransaction(ConsumerRecord<String, String> consumerRecord) {
