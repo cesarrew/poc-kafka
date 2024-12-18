@@ -11,10 +11,13 @@ import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Collections;
 
@@ -29,6 +32,9 @@ public class TopicAListenerService {
     private static final String TOPIC_A = "topico_a";
     private static final String TOPIC_B = "topico_b";
     private static final String TOPIC_C = "topico_c";
+
+    @Autowired
+    private ApplicationEventPublisher applicationEventPublisher;
 
     @Autowired
     private KafkaTemplate<String, String> kafkaTemplate;
@@ -128,7 +134,14 @@ public class TopicAListenerService {
                 consumer.groupMetadata()
         );
 
+        applicationEventPublisher.publishEvent("Evento de teste.");
         LOGGER.info("Fim do processamento da mensagem do tópico A...");
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    protected void handleAfterDataBaseCommit(String event) {
+        var messageList = messageRepository.findAll();
+        LOGGER.info("Mensagens no banco de dados: {}", String.join(", ", messageList.stream().map(Message::getMessage).toList()));
     }
 
     private void saveMessageDataBase(String messageTopicA) {
@@ -138,8 +151,9 @@ public class TopicAListenerService {
 
     private void sendKafkaMessages(String messageTopicA) {
         var messageTopicB = "Mensagem para o tópico B: " + messageTopicA;
-        var messageTopicC = "Mensagem para o tópico C: " + messageTopicA;
         kafkaTemplate.send(TOPIC_B, messageTopicB);
+
+        var messageTopicC = "Mensagem para o tópico C: " + messageTopicA;
         kafkaTemplate.send(TOPIC_C, messageTopicC);
     }
 }
