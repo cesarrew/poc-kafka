@@ -1,9 +1,9 @@
 package exemplo.poc.kafka.service;
 
 import exemplo.poc.kafka.exception.ConsumerProblemException;
+import exemplo.poc.kafka.exception.ProducerProblemException;
 import exemplo.poc.kafka.model.Message;
 import exemplo.poc.kafka.repository.MessageRepository;
-import exemplo.poc.kafka.exception.ProducerProblemException;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -22,9 +22,9 @@ import java.util.Collections;
 public class TopicAListenerService {
 
     private static final String CONSUMER_PROBLEM_IDENTIFICATION = "problema_consumidor";
-    private static final Logger LOGGER = LoggerFactory.getLogger(TopicAListenerService.class);
     private static final String GENERAL_PROBLEM_IDENTIFICATION = "problema_geral";
     private static final String GROUP_ID = "id_grupo";
+    private static final Logger LOGGER = LoggerFactory.getLogger(TopicAListenerService.class);
     private static final String PRODUCER_PROBLEM_IDENTIFICATION = "problema_produtor";
     private static final String TOPIC_A = "topico_a";
     private static final String TOPIC_B = "topico_b";
@@ -108,6 +108,8 @@ public class TopicAListenerService {
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
     public void processMessage(Consumer<String, String> consumer, ConsumerRecord<String, String> consumerRecord) {
         LOGGER.info("Início do processamento da mensagem do tópico A...");
+        saveMessageDataBase(consumerRecord.value());
+        sendKafkaMessages(consumerRecord.value());
 
         if (consumerRecord.value().contains(CONSUMER_PROBLEM_IDENTIFICATION)) {
             throw new ConsumerProblemException("Problema no consumidor. Enviando para a DLQ.");
@@ -121,14 +123,12 @@ public class TopicAListenerService {
             throw new RuntimeException("Problema não mapeado. Novas tentativas de processamento serão feitas.");
         }
 
-        saveMessageDataBase(consumerRecord.value());
-        sendKafkaMessages(consumerRecord.value());
-        LOGGER.info("Fim do processamento da mensagem do tópico A...");
-
         kafkaTemplate.sendOffsetsToTransaction(
-                Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()),new OffsetAndMetadata(consumerRecord.offset() + 1)),
+                Collections.singletonMap(new TopicPartition(consumerRecord.topic(), consumerRecord.partition()), new OffsetAndMetadata(consumerRecord.offset() + 1)),
                 consumer.groupMetadata()
         );
+
+        LOGGER.info("Fim do processamento da mensagem do tópico A...");
     }
 
     private void saveMessageDataBase(String messageTopicA) {
