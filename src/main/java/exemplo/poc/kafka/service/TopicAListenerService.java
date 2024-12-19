@@ -57,21 +57,21 @@ public class TopicAListenerService {
     */
 
     /*
-    Caso 2 - Usando o KafkaTransactionManager no consumidor
-    -------------------------------------------------------
+    Caso 1 - Não configurando o KafkaTransactionManager no consumidor
+    ------------------------------------------------------------------
 
     Objetivo: Consumir mensagem do tópico A, gravar no banco e depois produzir mensagens para os tópicos B e C. Enviar para DLQ (consumidor ou produtor) em caso de ConsumerProblemException ou ProducerProblemException após 3 tentativas. Nesse caso, a mensagem deve ser dada como consumida e as mensagens para os tópicos B e C não devem ser comitadas, assim como as operações de banco. Fazer retry infinito caso seja outro erro.
 
     Teste 1: Mensagem sem problemas de consumo.
-    Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C foram comitadas. Foi usado o sendOffsetsToTransaction pelo Spring Kafka para comitar o offset junto com a transação. Foi feito também o commit em banco. Resultado final desejado.
+    Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C foram comitadas. Foi usado o commitSync pelo Spring Kafka para o consumo da mensagem. Dessa forma, em caso de rollback na transação, o offset já estará comitado. Foi feito também o commit em banco. Resultado final indesejado.
 
     Teste 2: Mensagem com problema de consumo, erro conhecido ConsumerProblemException.
-    Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C foram comitadas incorretamente. Foi usado o sendOffsetsToTransaction pelo Spring Kafka para comitar o offset junto com a transação, mas sem ter dado o rollback no que foi enviado para tópicos B e C. Foi enviado para a DQL do consumidor e também foi feito rollback no banco. Resultado final indesejado.
+    Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C não foram comitadas. Foi usado o commitSync pelo Spring Kafka para o consumo da mensagem. Dessa forma, em caso de rollback na transação, o offset já estará comitado. Foi enviado para a DQL do consumidor e também foi feito rollback no banco. Resultado final indesejado.
 
     Teste 3: Mensagem com problema de consumo, erro desconhecido.
     Resultado: Mensagem não consumida e demais mensagens produzidas não comitadas. Retry infinito. Resultado final desejado.
 
-    Conclusão caso 2: O kafkaTransactionManager não pode ser configurado no consumidor porque em caso de exceção e envio da mensagem para a DLQ, as mensagens enviadas para os tópicos B e C são comitadas junto com a mensagem da DLQ.
+    Conclusão caso 2: Sem o KafkaTransactionManager os commits de offsets não são transacionais.
     */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)

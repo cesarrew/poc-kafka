@@ -5,7 +5,6 @@ import exemplo.poc.kafka.exception.ProducerProblemException;
 import exemplo.poc.kafka.recover.CustomDeadLetterPublishingRecoverer;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import jakarta.persistence.EntityManagerFactory;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -16,14 +15,11 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.*;
 import org.springframework.kafka.listener.CommonDelegatingErrorHandler;
 import org.springframework.kafka.listener.DefaultErrorHandler;
-import org.springframework.kafka.transaction.KafkaTransactionManager;
-import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
@@ -64,10 +60,6 @@ public class KafkaConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
         var factory = new ConcurrentKafkaListenerContainerFactory<String, String>();
-
-        //Necessário ser configurado explicitamente no kafkaListenerContainerFactory. Caso contrário, o commit dos offsets será pelo método "commitSync", e não junto com a transação com o método "sendOffsetsToTransaction". O problema é usar juntamente com o envio para DLQ. Quando isso acontece, mensagens produzidas que deveriam ter sido abortadas são comitadas juntamente com o offset consumido.
-        factory.getContainerProperties().setTransactionManager(kafkaTransactionManager());
-
         factory.setConsumerFactory(consumerFactory());
         factory.setCommonErrorHandler(errorHandler(kafkaTemplate()));
         return factory;
@@ -76,11 +68,6 @@ public class KafkaConfig {
     @Bean
     public KafkaTemplate<String, String> kafkaTemplate() {
         return new KafkaTemplate<>(producerFactory());
-    }
-
-    @Bean
-    public KafkaTransactionManager kafkaTransactionManager() {
-        return new KafkaTransactionManager(producerFactory());
     }
 
     @Bean
@@ -97,12 +84,6 @@ public class KafkaConfig {
 
         configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         return new DefaultKafkaProducerFactory<>(configProps);
-    }
-
-    @Bean
-    @Primary
-    public JpaTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
-        return new JpaTransactionManager(entityManagerFactory);
     }
 
     private Headers addErrorHeader(ConsumerRecord<?, ?> consumerRecord, Exception exception) {
