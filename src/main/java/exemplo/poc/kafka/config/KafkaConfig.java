@@ -5,6 +5,7 @@ import exemplo.poc.kafka.exception.ProducerProblemException;
 import exemplo.poc.kafka.recover.CustomDeadLetterPublishingRecoverer;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.persistence.EntityManagerFactory;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -15,11 +16,14 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.*;
 import org.springframework.kafka.listener.CommonDelegatingErrorHandler;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.transaction.KafkaTransactionManager;
+import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
@@ -29,14 +33,14 @@ import java.util.Map;
 @Configuration
 public class KafkaConfig {
 
-    private static final Long DELAY_BETWEEN_ATTEMPTS = 1_500L;
     private static final String BOOTSTRAP_SERVERS = "localhost:9092";
-    private static final String DEAD_LETTER_REASON_HEADER = "dead-letter-reason";
     private static final String CONSUMER_ISOLATION_LEVEL = "read_committed";
+    private static final String DEAD_LETTER_REASON_HEADER = "dead-letter-reason";
+    private static final Long DELAY_BETWEEN_ATTEMPTS = 1_500L;
     private static final Integer NUMBER_OF_ATTEMPTS = Integer.MAX_VALUE;
+    private static final String PRODUCER_TRANSACTIONAL_ID = "id_transacao";
     private static final String TOPIC_A_CONSUMER_DLQ = "topico_a_consumer_dlq";
     private static final String TOPIC_A_PRODUCER_DLQ = "topico_a_producer_dlq";
-    private static final String PRODUCER_TRANSACTIONAL_ID = "id_transacao";
 
     @Autowired
     private MeterRegistry meterRegistry;
@@ -44,28 +48,9 @@ public class KafkaConfig {
     @Bean
     public ConsumerFactory<String, String> consumerFactory() {
         var configProps = generateConnectionProperties();
-
-        //Necessário para que o consumidor apenas processe mensagens comitadas ou que não estejam em uma transação.
         configProps.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, CONSUMER_ISOLATION_LEVEL);
-
         return new DefaultKafkaConsumerFactory<>(configProps, new StringDeserializer(), new StringDeserializer());
     }
-
-    @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
-        var factory = new ConcurrentKafkaListenerContainerFactory<String, String>();
-
-        //Necessário ser configurado explicitamente no kafkaListenerContainerFactory. Caso contrário, o commit dos offsets será pelo método "commitSync", e não junto com a transação com o método "sendOffsetsToTransaction". O problema é usar juntamente com o envio para DLQ. Quando isso acontece, mensagens produzidas que deveriam ter sido abortadas são comitadas juntamente com o offset consumido.
-        //factory.getContainerProperties().setTransactionManager(kafkaTransactionManager());
-
-        factory.setConsumerFactory(consumerFactory());
-
-        //Define o uso do error handler customizado.
-        factory.setCommonErrorHandler(errorHandler(kafkaTemplate()));
-
-        return factory;
-    }
-
 
     //Cria um error handler que delega para outros error handlers a tarefa de tratamento de erro dependendo da exceção.
     @Bean
@@ -76,22 +61,27 @@ public class KafkaConfig {
         return commonDelegatingErrorHandler;
     }
 
-    //Não utilizado juntamente com o tratamento de erro que produz na DLQ.
-    /*
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
+        var factory = new ConcurrentKafkaListenerContainerFactory<String, String>();
+
+        //Necessário ser configurado explicitamente no kafkaListenerContainerFactory. Caso contrário, o commit dos offsets será pelo método "commitSync", e não junto com a transação com o método "sendOffsetsToTransaction". O problema é usar juntamente com o envio para DLQ. Quando isso acontece, mensagens produzidas que deveriam ter sido abortadas são comitadas juntamente com o offset consumido.
+        factory.getContainerProperties().setTransactionManager(kafkaTransactionManager());
+
+        factory.setConsumerFactory(consumerFactory());
+        factory.setCommonErrorHandler(errorHandler(kafkaTemplate()));
+        return factory;
+    }
+
+    @Bean
+    public KafkaTemplate<String, String> kafkaTemplate() {
+        return new KafkaTemplate<>(producerFactory());
+    }
+
     @Bean
     public KafkaTransactionManager kafkaTransactionManager() {
         return new KafkaTransactionManager(producerFactory());
     }
-    */
-
-    //Necessário ser declarado ao usar o kafkaTransactionManager.
-    /*
-    @Bean
-    @Primary
-    public JpaTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
-        return new JpaTransactionManager(entityManagerFactory);
-    }
-    */
 
     @Bean
     public ProducerFactory<String, String> producerFactory() {
@@ -110,8 +100,9 @@ public class KafkaConfig {
     }
 
     @Bean
-    public KafkaTemplate<String, String> kafkaTemplate() {
-        return new KafkaTemplate<>(producerFactory());
+    @Primary
+    public JpaTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
+        return new JpaTransactionManager(entityManagerFactory);
     }
 
     private Headers addErrorHeader(ConsumerRecord<?, ?> consumerRecord, Exception exception) {
