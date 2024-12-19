@@ -71,7 +71,7 @@ public class TopicAListenerService {
     Teste 3: Mensagem com problema de consumo, erro desconhecido.
     Resultado: Mensagem não consumida e demais mensagens produzidas não comitadas. Retry infinito. Resultado final desejado.
 
-    Conclusão caso 2: Sem o KafkaTransactionManager os commits de offsets não são transacionais.
+    Conclusão: Sem o KafkaTransactionManager os commits de offsets não são transacionais.
     */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
