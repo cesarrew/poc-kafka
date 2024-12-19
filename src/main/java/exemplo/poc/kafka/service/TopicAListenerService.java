@@ -57,18 +57,24 @@ public class TopicAListenerService {
     Consumir mensagens do topico_c: bin/kafka-console-consumer.sh --topic topico_c --from-beginning --bootstrap-server localhost:9092 --isolation-level=read_committed
     Consumir mensagens do topico_a_consumer_dlq: bin/kafka-console-consumer.sh --topic topico_a_consumer_dlq --from-beginning --bootstrap-server localhost:9092 --isolation-level=read_committed
     Consumir mensagens do topico_a_producer_dlq: bin/kafka-console-consumer.sh --topic topico_a_producer_dlq --from-beginning --bootstrap-server localhost:9092 --isolation-level=read_committed
-     */
+    */
 
     /*
-    Caso 4 - Uso da API nativa do Kafka
-    -----------------------------------
+    Caso 4 - Usando a API nativa do Kafka
+    -------------------------------------
 
-    Consumindo mensagem do tópico A, gravando em banco e depois produzindo mensagens para os tópicos B e C. Enviando para a DLQ do consumidor em caso de erro no consumidor, DLQ do produtor em caso de erro no produtor e tentativas infinitas em caso de erro não mapeado.
+    Objetivo: Consumir mensagem do tópico A, gravar no banco e depois produzir mensagens para os tópicos B e C. Enviar para DLQ (consumidor ou produtor) em caso de ConsumerProblemException ou ProducerProblemException após 3 tentativas. Nesse caso, a mensagem deve ser dada como consumida e as mensagens para os tópicos B e C não devem ser comitadas, assim como as operações de banco. Fazer retry infinito caso seja outro erro.
 
-    Teste 1: Usando loops e recursos da API nativa do Kafka.
-    Resultado: O tratamento de erros foi feito adequadamente de acordo com o tipo de exceção. Além disso, o rollback foi feito no banco ao enviar para a DLQ.
+    Teste 1: Mensagem sem problemas de consumo.
+    Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C foram comitadas. Foi usado o sendOffsetsToTransaction para comitar o offset junto com a transação. Foi feito também o commit em banco. Resultado final desejado.
 
-    Conclusão caso 4: Pode-se mapear problemas conhecidos lançando determinadas exceções para determinar se será feito retry ou se será enviado para a DLQ do consumidor/produtor. É feito também rollback no banco em caso de necessidade de enviar para a DLQ, o que é necessário.
+    Teste 2: Mensagem com problema de consumo, erro conhecido ConsumerProblemException.
+    Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C não foram comitadas. Foi usado o sendOffsetsToTransaction para o consumo transacional da mensagem juntamente com o que foi para a DLQ. Foi feito rollback no banco. Resultado final desejado.
+
+    Teste 3: Mensagem com problema de consumo, erro desconhecido.
+    Resultado: Mensagem não consumida e demais mensagens produzidas não comitadas. Retry infinito. Resultado final desejado.
+
+    Conclusão: Usando a API do Kafka a solução ficou mais acertiva e fácil de entender.
     */
     public void processMessage() throws InterruptedException {
         kafkaProducer.initTransactions();
