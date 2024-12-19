@@ -71,7 +71,7 @@ public class TopicAListenerService {
     Teste 3: Mensagem com problema de consumo, erro desconhecido.
     Resultado: Mensagem não consumida e demais mensagens produzidas não comitadas. Retry infinito. Resultado final desejado.
 
-    Conclusão: O uso do sendOffsetsToTransaction sem o kafkaTransactionManager garante o consumo transacional sem impactar em caso de problema que necessite enviar para as DQLs. Ou seja, se enviar para as DLQs, as mensagens enviadas para os tópicos B e C não serão são comitadas junto com a mensagem da DLQ.
+    Conclusão: O uso do sendOffsetsToTransaction sem o kafkaTransactionManager garante o consumo transacional sem impactar em caso de problema que necessite enviar para as DQLs. Ou seja, se enviar para as DLQs, as mensagens enviadas para os tópicos B e C não serão são comitadas junto com a mensagem da DLQ. O uso do commitSync pelo Spring Kafka em alguns momentos não é desejável mas não aparenta ser impactante.
     */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
