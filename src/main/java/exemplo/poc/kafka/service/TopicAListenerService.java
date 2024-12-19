@@ -71,7 +71,7 @@ public class TopicAListenerService {
     Teste 3: Mensagem com problema de consumo, erro desconhecido.
     Resultado: Mensagem não consumida e demais mensagens produzidas não comitadas. Retry infinito. Resultado final desejado.
 
-    Conclusão caso 2: O KafkaTransactionManager não pode ser configurado no consumidor porque em caso de exceção e envio da mensagem para a DLQ, as mensagens enviadas para os tópicos B e C são comitadas junto com a mensagem da DLQ.
+    Conclusão: O KafkaTransactionManager não pode ser configurado no consumidor porque em caso de exceção e envio da mensagem para a DLQ, as mensagens enviadas para os tópicos B e C são comitadas junto com a mensagem da DLQ.
     */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
