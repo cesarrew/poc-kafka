@@ -66,12 +66,12 @@ public class TopicAListenerService {
     Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C foram comitadas. Foi usado o sendOffsetsToTransaction para comitar o offset junto com a transação. O Spring Kafka fez também o commitSync após o commit da transação, mas isso não é um problema real. Foi feito também o commit em banco. Resultado final desejado.
 
     Teste 2: Mensagem com problema de consumo, erro conhecido ConsumerProblemException.
-    Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C não foram comitadas. Foi usado o co pelo Spring Kafka para comitar o offset junto com a transação, mas sem ter dado o rollback no que foi enviado para tópicos B e C. Foi enviado para a DQL do consumidor e também foi feito rollback no banco. Resultado final indesejado.
+    Resultado: Mensagem foi consumida e as mensagens para os tópicos B e C não foram comitadas. Foi usado o commitSync pelo Spring Kafka para o consumo da mensagem após o commit da transação na DLQ, então, em caso de erro na transação, a mensagem não seria consumida. Existe a possibilidade ainda assim da transação ser comitada e o offset não. Isso implicaria no reprocessamento da mensagem, o que é um risco mitigável. Foi enviado para a DQL do consumidor e também foi feito rollback no banco. Resultado final desejado.
 
     Teste 3: Mensagem com problema de consumo, erro desconhecido.
     Resultado: Mensagem não consumida e demais mensagens produzidas não comitadas. Retry infinito. Resultado final desejado.
 
-    Conclusão caso 2: O kafkaTransactionManager não pode ser configurado no consumidor porque em caso de exceção e envio da mensagem para a DLQ, as mensagens enviadas para os tópicos B e C são comitadas junto com a mensagem da DLQ.
+    Conclusão: O uso do sendOffsetsToTransaction sem o kafkaTransactionManager garante o consumo transacional sem impactar em caso de problema que necessite enviar para as DQLs. Ou seja, se enviar para as DLQs, as mensagens enviadas para os tópicos B e C não serão são comitadas junto com a mensagem da DLQ.
     */
     @Transactional
     @KafkaListener(groupId = GROUP_ID, topics = TOPIC_A)
