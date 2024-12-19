@@ -3,8 +3,6 @@ package exemplo.poc.kafka.config;
 import exemplo.poc.kafka.exception.ConsumerProblemException;
 import exemplo.poc.kafka.exception.ProducerProblemException;
 import exemplo.poc.kafka.recover.CustomDeadLetterPublishingRecoverer;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -12,7 +10,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
@@ -37,9 +34,6 @@ public class KafkaConfig {
     private static final String PRODUCER_TRANSACTIONAL_ID = "id_transacao";
     private static final String TOPIC_A_CONSUMER_DLQ = "topico_a_consumer_dlq";
     private static final String TOPIC_A_PRODUCER_DLQ = "topico_a_producer_dlq";
-
-    @Autowired
-    private MeterRegistry meterRegistry;
 
     @Bean
     public ConsumerFactory<String, String> consumerFactory() {
@@ -101,7 +95,6 @@ public class KafkaConfig {
     //Cria um handler que envia a mensagem Kafka para a DLQ criada para posterior tratamento pelo consumidor.
     private DefaultErrorHandler generateConsumerErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
         var consumerDLQRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
-            incrementMessagesSentToDLQ(TOPIC_A_CONSUMER_DLQ);
             return new TopicPartition(TOPIC_A_CONSUMER_DLQ, consumerRecord.partition());
         });
 
@@ -117,22 +110,10 @@ public class KafkaConfig {
     //Cria um handler que envia a mensagem Kafka para a DLQ criada para posterior tratamento pelo produtor.
     private DefaultErrorHandler generateProducerErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
         var producerDLQRecoverer = new CustomDeadLetterPublishingRecoverer(kafkaTemplate, (consumerRecord, exception) -> {
-            incrementMessagesSentToDLQ(TOPIC_A_PRODUCER_DLQ);
             return new TopicPartition(TOPIC_A_PRODUCER_DLQ, consumerRecord.partition());
         });
 
         producerDLQRecoverer.setHeadersFunction(this::addErrorHeader);
         return new DefaultErrorHandler(producerDLQRecoverer);
-    }
-
-    //Incrementa o contador de mensagens enviadas para as DLQs para monitoração usando Prometheus.
-    private void incrementMessagesSentToDLQ(String topic) {
-        Counter counter = Counter
-                .builder("mensagens.enviadas.dlq")
-                .description("Total de mensagens enviadas para as DLQs")
-                .tags("topico", topic)
-                .register(meterRegistry);
-
-        counter.increment();
     }
 }
